@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from functools import lru_cache
-from pathlib import Path
 from typing import List, Optional
 
 import chromadb
@@ -20,6 +19,7 @@ from .data_pipeline import (
 )
 from .llm_provider import create_embedding_model, create_llm
 from .models import CandidateProfile
+from .paths import CHROMA_DIR, STORAGE_DIR
 from .profile_store import load_profiles
 from .tools import (
     build_candidate_directory_tool,
@@ -29,10 +29,6 @@ from .tools import (
     fallback_rag_retrieval_answer,
     get_wikipedia_search_tool,
 )
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-STORAGE_DIR = BASE_DIR / "storage"
-CHROMA_DIR = STORAGE_DIR / "chroma"
 
 LANGUAGE_INSTRUCTION = (
     "Please respond using the same language as the user's latest request. "

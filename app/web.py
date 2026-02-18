@@ -5,23 +5,21 @@ import base64
 from pathlib import Path
 from typing import List, Optional
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-
 import streamlit as st
 from llama_index.core.llms import ChatMessage
 
 try:
+    from .paths import DATA_DIR, STORAGE_DIR
     from . import CandidateProfile, index_exists, load_profiles, prepare_candidates
     from .agent import chat_with_agent
 except ImportError:  # when executed as a script via ``streamlit run``
     import sys
 
-    sys.path.append(str(BASE_DIR))
+    sys.path.append(str(Path(__file__).resolve().parent.parent))
+    from app.paths import DATA_DIR, STORAGE_DIR
     from app import CandidateProfile, index_exists, load_profiles, prepare_candidates
     from app.agent import chat_with_agent
 
-DATA_DIR = BASE_DIR / "data"
-STORAGE_DIR = BASE_DIR / "storage"
 MISSING_TEXT_VALUES = {"", "not provided", "none", "null", "n/a", "na", "unknown"}
 NAME_FALLBACK = "Candidate name not provided"
 PROFESSION_FALLBACK = "Profession not provided"

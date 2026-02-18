@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import List
 
@@ -55,3 +56,12 @@ def index_exists(storage_dir: Path) -> bool:
     # Empty profile list is a valid indexed state when there are no resumes yet.
     return len(load_profiles(storage_dir)) == 0
 
+
+def clear_index_artifacts(storage_dir: Path) -> None:
+    profiles_path = _profiles_path(storage_dir)
+    chroma_dir = storage_dir / "chroma"
+
+    if profiles_path.exists():
+        profiles_path.unlink()
+    if chroma_dir.exists():
+        shutil.rmtree(chroma_dir, ignore_errors=True)

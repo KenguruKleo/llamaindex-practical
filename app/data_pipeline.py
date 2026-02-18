@@ -17,6 +17,7 @@ from llama_index.core.vector_stores.types import MetadataFilter, MetadataFilters
 
 from .llm_provider import create_embedding_model, create_llm
 from .models import CandidateProfile
+from .paths import DATA_DIR, STORAGE_DIR
 from .profile_store import save_profiles
 
 try:
@@ -190,9 +191,6 @@ def slugify(value: str) -> str:
 
 
 if __name__ == "__main__":  # pragma: no cover - convenience script
-    base_dir = Path(__file__).resolve().parent.parent
-    data_dir = base_dir / "data"
-    storage_dir = base_dir / "storage"
-    indexer = CandidateIndexer(data_dir=data_dir, storage_dir=storage_dir)
+    indexer = CandidateIndexer(data_dir=DATA_DIR, storage_dir=STORAGE_DIR)
     profiles = indexer.run()
-    print(f"Indexed {len(profiles)} candidate(s) into {storage_dir}.")
+    print(f"Indexed {len(profiles)} candidate(s) into {STORAGE_DIR}.")

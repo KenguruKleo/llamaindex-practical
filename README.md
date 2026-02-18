@@ -30,6 +30,16 @@ pip install -r requirements.txt
 
 ## Environment configuration
 
+Create `.env` from sample first:
+
+```bash
+cp .env.sample .env
+```
+
+Important:
+- Set `LLM_PROVIDER` explicitly to `openai` or `azure`.
+- Fill credentials for the selected provider.
+
 ### Option A: OpenAI
 
 ```env
@@ -60,10 +70,10 @@ Run indexing manually:
 python -m app.data_pipeline
 ```
 
-Force rebuild after adding/updating CVs:
+Run a full clean rebuild (deletes `storage/chroma/` and `storage/candidates.json`, then re-indexes):
 
 ```bash
-REBUILD_INDEX=1 python -m app.data_pipeline
+python -m app.rebuild_index
 ```
 
 Generated artifacts:
@@ -125,7 +135,9 @@ app/
   data_pipeline.py   # indexing pipeline (ingestion/chunking + Chroma writes)
   llm_provider.py    # OpenAI/Azure provider selection + LLM/embedding factories
   models.py          # domain models (CandidateProfile)
+  paths.py           # centralized project paths (data/storage/chroma)
   profile_store.py   # candidate metadata read/write + index existence checks
+  rebuild_index.py   # full clean rebuild command (clear + reindex)
   web.py             # Streamlit UI
   tools/
     __init__.py
@@ -140,11 +152,3 @@ docs/
   practical-1.md     # Practical 1 mapping to implementation
   practical-2.md     # Practical 2 mapping to implementation
 ```
-
-## Notes
-
-- Provider switch is controlled by `LLM_PROVIDER` (`openai` or `azure`).
-- Provider routing and model factories are centralized in `app/llm_provider.py`.
-- For Azure mode, install dependencies from `requirements.txt` and set Azure env vars.
-- ChromaDB is local at `storage/chroma/`; remove it for a clean vector state.
-- Keep secrets in `.env` and never commit API keys.
