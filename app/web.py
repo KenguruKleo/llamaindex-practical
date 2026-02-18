@@ -2,56 +2,51 @@ from __future__ import annotations
 
 import os
 import base64
-from functools import lru_cache
 from pathlib import Path
 from typing import List, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-import chromadb
 import streamlit as st
-from llama_index.core import StorageContext, VectorStoreIndex
-from llama_index.core.vector_stores.types import MetadataFilter, MetadataFilters
-from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.core.llms import ChatMessage
 
 try:
-    from . import CHROMA_COLLECTION, CandidateProfile, load_profiles, prepare_candidates
+    from . import CandidateProfile, index_exists, load_profiles, prepare_candidates
     from .agent import chat_with_agent
-    from .data_pipeline import create_embedding_model
 except ImportError:  # when executed as a script via ``streamlit run``
     import sys
 
     sys.path.append(str(BASE_DIR))
-    from app import CHROMA_COLLECTION, CandidateProfile, load_profiles, prepare_candidates
+    from app import CandidateProfile, index_exists, load_profiles, prepare_candidates
     from app.agent import chat_with_agent
-    from app.data_pipeline import create_embedding_model
 
 DATA_DIR = BASE_DIR / "data"
 STORAGE_DIR = BASE_DIR / "storage"
-CHROMA_DIR = STORAGE_DIR / "chroma"
+MISSING_TEXT_VALUES = {"", "not provided", "none", "null", "n/a", "na", "unknown"}
+NAME_FALLBACK = "Candidate name not provided"
+PROFESSION_FALLBACK = "Profession not provided"
 
-CHROMA_DIR.mkdir(parents=True, exist_ok=True)
 
-if os.getenv("REBUILD_INDEX", "0") == "1" or not (STORAGE_DIR / "candidates.json").exists():
+if os.getenv("REBUILD_INDEX", "0") == "1" or not index_exists(STORAGE_DIR):
     prepare_candidates(DATA_DIR, STORAGE_DIR)
 
 PROFILES: List[CandidateProfile] = load_profiles(STORAGE_DIR)
 PROFILE_LOOKUP = {profile.id: profile for profile in PROFILES}
 
-chroma_client = chromadb.PersistentClient(path=str(CHROMA_DIR))
+
+def _display_name(raw_name: Optional[str]) -> str:
+    value = (raw_name or "").strip()
+    if value.lower() in MISSING_TEXT_VALUES:
+        return NAME_FALLBACK
+    return value
 
 
-@lru_cache(maxsize=1)
-def load_index() -> VectorStoreIndex:
-    collection = chroma_client.get_or_create_collection(CHROMA_COLLECTION)
-    vector_store = ChromaVectorStore(chroma_collection=collection)
-    storage_context = StorageContext.from_defaults(vector_store=vector_store)
-    return VectorStoreIndex.from_vector_store(
-        vector_store=vector_store,
-        storage_context=storage_context,
-        embed_model=create_embedding_model(),
-    )
+def _display_profession(raw_profession: Optional[str]) -> str:
+    value = (raw_profession or "").strip()
+    if value.lower() in MISSING_TEXT_VALUES:
+        return PROFESSION_FALLBACK
+    return value
+
 
 def _format_summary(summary: str, limit: int = 240) -> str:
     summary = summary.strip()
@@ -76,8 +71,8 @@ def render_directory(profiles: List[CandidateProfile], active_candidate_id: Opti
 
     for profile in profiles:
         with st.container(border=True):
-            st.markdown(f"### {profile.name}")
-            st.caption(profile.profession)
+            st.markdown(f"### {_display_name(profile.name)}")
+            st.caption(_display_profession(profile.profession))
             if profile.years_experience:
                 st.write(f"Experience: {profile.years_experience} years")
             if profile.skills:
@@ -100,8 +95,8 @@ def render_candidate_details(profile: CandidateProfile) -> None:
     if st.button("← Back to directory", use_container_width=False):
         _set_candidate_page(None)
 
-    st.markdown(f"### {profile.name}")
-    st.caption(profile.profession)
+    st.markdown(f"### {_display_name(profile.name)}")
+    st.caption(_display_profession(profile.profession))
 
     meta_items = []
     if profile.years_experience:
@@ -117,7 +112,10 @@ def render_candidate_details(profile: CandidateProfile) -> None:
         st.markdown("#### Skills")
         st.write(", ".join(profile.skills))
 
-    pdf_path = DATA_DIR / f"{profile.id}.pdf"
+    if profile.source_file:
+        pdf_path = DATA_DIR / profile.source_file
+    else:
+        pdf_path = DATA_DIR / f"{profile.id}.pdf"
     st.markdown("#### Resume")
     if pdf_path.exists():
         with pdf_path.open("rb") as fp:
@@ -147,7 +145,21 @@ def render_candidate_details(profile: CandidateProfile) -> None:
 
 def render_agent_chat() -> None:
     st.markdown("### Candidate Assistant Chat")
-    
+
+    if st.button("Clear chat / New chat", use_container_width=False):
+        st.session_state.messages = []
+        st.rerun()
+
+    def _to_chat_history(messages: List[dict]) -> List[ChatMessage]:
+        history: List[ChatMessage] = []
+        for message in messages:
+            role = str(message.get("role", "")).strip().lower()
+            content = str(message.get("content", "")).strip()
+            if role not in {"user", "assistant", "system"} or not content:
+                continue
+            history.append(ChatMessage(role=role, content=content))
+        return history
+
     if "messages" not in st.session_state:
         st.session_state.messages = []
     
@@ -161,8 +173,8 @@ def render_agent_chat() -> None:
         st.session_state.messages.append({"role": "user", "content": prompt})
         
         with st.spinner("Thinking..."):
-            history: List[ChatMessage] = st.session_state.messages
-            agent_output = chat_with_agent(prompt, chat_history=history.copy())
+            history = _to_chat_history(st.session_state.messages[:-1])
+            agent_output = chat_with_agent(prompt, chat_history=history)
             response = agent_output.response.content or ""
             # enrich display with tool usage when available
             if agent_output.tool_calls:
@@ -196,18 +208,18 @@ def main() -> None:
     selected_profile = PROFILE_LOOKUP.get(current_id) if current_id else None
 
     if selected_profile:
-        st.sidebar.success(f"Viewing: {selected_profile.name}")
+        st.sidebar.success(f"Viewing: {_display_name(selected_profile.name)}")
 
-    tab_directory, tab_agent = st.tabs(["Candidate Directory", "Agent Chat"])
+    tab_agent, tab_directory = st.tabs(["Agent Chat", "Candidate Directory"])
+
+    with tab_agent:
+        render_agent_chat()
 
     with tab_directory:
         if selected_profile:
             render_candidate_details(selected_profile)
         else:
             render_directory(PROFILES, current_id)
-
-    with tab_agent:
-        render_agent_chat()
 
 
 if __name__ == "__main__":

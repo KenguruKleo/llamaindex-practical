@@ -95,6 +95,17 @@ def _sanitize_skills(raw: object, *, limit: int = 10) -> List[str]:
     return []
 
 
+def _normalize_optional_text(raw: object) -> Optional[str]:
+    if raw is None:
+        return None
+    value = str(raw).strip()
+    if not value:
+        return None
+    if value.lower() in {"none", "null", "n/a", "na", "unknown"}:
+        return None
+    return value
+
+
 @dataclass
 class CandidateProfile:
     id: str
@@ -136,7 +147,7 @@ class CandidateIndexer:
             documents = self._load_documents(pdf_path, candidate_id)
             nodes = self._build_nodes(documents, candidate_id, pdf_path.name)
 
-            profile = self._build_index(candidate_id, nodes, documents, pdf_path.name)
+            profile = self._build_index(candidate_id, nodes, pdf_path.name)
             profiles.append(profile)
 
         self._persist_profiles(profiles)
@@ -161,7 +172,6 @@ class CandidateIndexer:
         self,
         candidate_id: str,
         nodes,
-        _documents: List[Document],
         source_file: str,
     ) -> CandidateProfile:
         collection = self._chroma_client.get_or_create_collection(name=self._collection_name)
@@ -177,7 +187,7 @@ class CandidateIndexer:
         skills = _sanitize_skills(raw_skills)
         name = str(details.get("name", "")).strip()
         profession = str(details.get("profession", "")).strip()
-        years_experience = str(details.get("years_experience"))
+        years_experience = _normalize_optional_text(details.get("years_experience"))
         summary = str(details.get("summary", "")).strip()
 
         return CandidateProfile(
@@ -210,6 +220,28 @@ class CandidateIndexer:
 def slugify(value: str) -> str:
     tokens = re.findall(r"[a-zA-Z0-9]+", value.lower())
     return "-".join(tokens) or "candidate"
+
+
+def index_exists(storage_dir: Path) -> bool:
+    profiles_path = storage_dir / "candidates.json"
+    chroma_dir = storage_dir / "chroma"
+
+    if not profiles_path.exists():
+        return False
+    if not chroma_dir.exists():
+        return False
+
+    try:
+        has_chroma_data = any(chroma_dir.iterdir())
+    except OSError:
+        return False
+
+    if has_chroma_data:
+        return True
+
+    # Empty profile list is a valid indexed state when there are no resumes yet.
+    return len(load_profiles(storage_dir)) == 0
+
 
 def load_profiles(storage_dir: Path) -> List[CandidateProfile]:
     data_path = storage_dir / "candidates.json"

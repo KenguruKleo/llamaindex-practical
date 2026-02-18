@@ -8,6 +8,7 @@ from .data_pipeline import (
     CandidateIndexer,
     CandidateProfile,
     create_embedding_model,
+    index_exists,
     load_profiles,
 )
 
@@ -16,6 +17,7 @@ __all__ = [
     "CandidateProfile",
     "CHROMA_COLLECTION",
     "create_embedding_model",
+    "index_exists",
     "load_profiles",
 ]
 
