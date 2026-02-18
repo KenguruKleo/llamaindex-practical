@@ -127,3 +127,6 @@ cython_debug/
 
 # Project data and storage artifacts
 /storage/
+
+# Local venv shortcut symlink
+/python
