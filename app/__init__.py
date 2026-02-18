@@ -6,17 +6,17 @@ from typing import List
 from .data_pipeline import (
     CHROMA_COLLECTION,
     CandidateIndexer,
-    CandidateProfile,
-    create_embedding_model,
-    index_exists,
-    load_profiles,
 )
+from .llm_provider import create_embedding_model, create_llm
+from .models import CandidateProfile
+from .profile_store import index_exists, load_profiles
 
 __all__ = [
     "CandidateIndexer",
     "CandidateProfile",
     "CHROMA_COLLECTION",
     "create_embedding_model",
+    "create_llm",
     "index_exists",
     "load_profiles",
 ]

@@ -1,63 +1,91 @@
 # LlamaIndex Candidate Explorer
 
-This project ingests PDF resumes, chunks them into meaningful passages, embeds the passages with OpenAI embeddings, and writes them to a persistent ChromaDB vector store via LlamaIndex. Candidate metadata (name, profession, skills, summary) is produced by querying each Chroma-backed index with an OpenAI chat model. A Streamlit UI provides an `Agent Chat` tab (default view) plus a candidate directory with detailed profile pages.
+This project ingests PDF resumes, chunks them into meaningful passages, generates embeddings with LlamaIndex, stores vectors in ChromaDB, and serves a Streamlit web app for candidate browsing and agent chat.
+
+The app supports both providers:
+- OpenAI
+- Azure OpenAI
+
+## Assessment docs
+
+- [Practical 1 implementation notes](docs/practical-1.md) - CV ingestion, chunking, embeddings, vector DB, candidate metadata extraction, and web UI mapping.
+- [Practical 2 implementation notes](docs/practical-2.md) - ReAct agent architecture, tools, chat history behavior, and fallback handling.
 
 ## Requirements
 
 - Python 3.12+
-- A virtual environment (recommended)
-- An OpenAI API key with access to the embedding and chat models you intend to use
-- PDF resumes placed under `data/`
+- Virtual environment (recommended)
+- API credentials for one provider:
+  - OpenAI (`OPENAI_API_KEY`)
+  - Azure OpenAI (`AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, deployments)
+- PDF resumes placed under `data/` (current dataset size: 25 CV files)
 
-Create a virtual environment, activate it, and install dependencies (adjust the activation command for your shell/OS):
+Install dependencies:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate        # Windows PowerShell: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-export OPENAI_API_KEY=sk-...
-# optional: echo "OPENAI_API_KEY=sk-..." > .env
 ```
 
-Reactivate the environment in new shells with `source .venv/bin/activate` (or the corresponding Windows command) before running any project commands.
+## Environment configuration
+
+### Option A: OpenAI
+
+```env
+LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-...
+OPENAI_LLM_MODEL=gpt-4o-mini
+OPENAI_EMBED_MODEL=text-embedding-3-small
+```
+
+### Option B: Azure OpenAI
+
+```env
+LLM_PROVIDER=azure
+AZURE_OPENAI_API_KEY=...
+AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com/
+AZURE_OPENAI_API_VERSION=2024-02-01
+AZURE_OPENAI_LLM_DEPLOYMENT=<chat-deployment-name>
+AZURE_OPENAI_EMBEDDING_DEPLOYMENT=<embedding-deployment-name>
+```
 
 ## Preparing the data
 
-The web app will automatically run indexing only if the index is missing or incomplete. To trigger indexing manually:
+The web app auto-indexes only if index artifacts are missing or incomplete.
+
+Run indexing manually:
 
 ```bash
 python -m app.data_pipeline
 ```
 
-Generated artifacts are stored under `storage/`:
-
-- `candidates.json` – metadata, summaries, and skills
-- `chroma/` – persistent ChromaDB storage (single `candidates` collection containing every resume chunk)
-
-If you add or update resumes, rebuild the index:
+Force rebuild after adding/updating CVs:
 
 ```bash
 REBUILD_INDEX=1 python -m app.data_pipeline
 ```
 
-## Running the web application
+Generated artifacts:
+- `storage/candidates.json` - candidate metadata and summaries
+- `storage/chroma/` - persistent ChromaDB vector store (`candidates` collection)
 
-Serve the Streamlit UI:
+## Running the web application
 
 ```bash
 streamlit run app/web.py
 ```
 
-Streamlit prints the local URL in the terminal (typically http://localhost:8501).
+Default UI behavior:
+- `Agent Chat` tab opens first
+- `Clear chat / New chat` resets session chat history
+- `Candidate Directory` shows candidate cards and detailed profile pages
+- Candidate details include summary, skills, source file, and PDF preview/download
+- Opening links like `?candidate=<id>` switches default focus to profile view in `Candidate Directory`
 
-- `Agent Chat` opens first by default.
-- Use `Clear chat / New chat` to reset chat history in the current session.
-- `Candidate Directory` shows all indexed candidates with high-level metadata and summaries.
-- Clicking `View full profile` opens a dedicated profile view that exposes full summary, skills, and resume preview/download.
+## Agent Chat test prompts
 
-### Agent Chat test prompts
-
-Use these prompts in the `Agent Chat` tab to validate retrieval against the current dataset in `data/` (25 resumes):
+Use these prompts in `Agent Chat` to validate behavior with current data:
 
 - `Show full profile for candidate 12472574.`
 - `Find accountant candidates and rank top 3 by years of experience (focus on 10554236, 10674770, 11163645, 11759079).`
@@ -65,37 +93,58 @@ Use these prompts in the `Agent Chat` tab to validate retrieval against the curr
 - `Find candidates with digital transformation/strategy background (17432318, 17562754, 18488289, 10515955).`
 - `Які кандидати найкраще підходять на роль QA Team Lead? Розглянь 12472574 і суміжних кандидатів.`
 - `Покажи 2 найрелевантніших кандидатів для hospitality/food service (11835339, 12334650, 16248476).`
+- `Who wrote the book Clean Code?` (general knowledge tool)
+
+Tool routing in agent:
+- `candidate_rag_retriever` is the primary RAG tool for resume-grounded answers.
+- `profile_lookup` is used for detailed output when candidate ID/name is known.
+- `candidate_directory` is used for lightweight metadata list/filter or fallback when RAG has no evidence.
+- `general_knowledge` and optional Wikipedia tool are used for non-resume questions.
 
 ### Chat history test (multi-turn)
 
-Run these messages in order in the same chat session:
+Run in the same session:
 
 1. `Find 3 best candidates for a finance/accounting manager role and explain briefly.`
 2. `Take the first candidate from your previous answer and provide a detailed profile.`
 3. `Now compare that candidate with 11759079 and give a final recommendation.`
 
-If chat history is working, messages 2 and 3 should be interpreted using context from earlier turns (without repeating the first candidate ID manually).
-
 Expected behavior:
-- The answer includes matched candidate IDs as clickable links in format `?candidate=<id>`.
-- For the most relevant candidate, the assistant returns detailed profile fields (name, profession, skills, summary).
-- If ReAct reaches iteration limit, the app should return a fallback retrieval answer instead of crashing.
-- Placeholder values are rendered as user-friendly text (`Candidate name not provided`, `Profession not provided`).
+- candidate IDs appear as clickable `?candidate=<id>` links
+- best-match candidate has structured profile fields
+- follow-up prompts use prior chat context
+- if ReAct reaches iteration limit, fallback retrieval response is returned instead of app crash
+- placeholder values are rendered as user-friendly text (`Candidate name not provided`, `Profession not provided`)
 
 ## Project layout
 
-```
+```text
 app/
-  __init__.py        # prepare_candidates helper
-  agent.py           # ReAct agent, tools, and fallback behavior
-  data_pipeline.py   # ingestion, chunking, embeddings, Chroma persistence
-  web.py             # Streamlit entry point
+  __init__.py        # shared exports + prepare_candidates helper
+  agent.py           # ReAct agent orchestration and fallback behavior
+  data_pipeline.py   # indexing pipeline (ingestion/chunking + Chroma writes)
+  llm_provider.py    # OpenAI/Azure provider selection + LLM/embedding factories
+  models.py          # domain models (CandidateProfile)
+  profile_store.py   # candidate metadata read/write + index existence checks
+  web.py             # Streamlit UI
+  tools/
+    __init__.py
+    common.py                # shared formatting helpers for tool outputs
+    candidate_rag_retriever.py  # vector retrieval (RAG) tool + fallback renderer
+    profile_lookup.py        # profile lookup by id/name
+    candidate_directory.py   # list/filter candidates from metadata
+    general_knowledge.py     # non-resume Q&A via configured LLM
+    wikipedia_search.py      # optional pre-built Wikipedia tool
+
+docs/
+  practical-1.md     # Practical 1 mapping to implementation
+  practical-2.md     # Practical 2 mapping to implementation
 ```
 
 ## Notes
 
-- Set `OPENAI_EMBED_MODEL` to switch to a different embedding model (defaults to `text-embedding-3-small`).
-- Set `OPENAI_LLM_MODEL` to the chat model that extracts metadata and summaries (defaults to `gpt-4o-mini`).
-- Make sure `OPENAI_API_KEY` is available in the environment (or `.env`) before running the pipeline or web app.
-- ChromaDB stores vectors locally under `storage/chroma/`; remove this folder if you need a clean slate or to clear the shared `candidates` collection.
-- Legacy Flask templates have been removed; the Streamlit app renders the UI directly in `app/web.py`.
+- Provider switch is controlled by `LLM_PROVIDER` (`openai` or `azure`).
+- Provider routing and model factories are centralized in `app/llm_provider.py`.
+- For Azure mode, install dependencies from `requirements.txt` and set Azure env vars.
+- ChromaDB is local at `storage/chroma/`; remove it for a clean vector state.
+- Keep secrets in `.env` and never commit API keys.

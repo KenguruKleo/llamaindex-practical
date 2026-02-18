@@ -1,25 +1,23 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
-from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 import chromadb
-from dotenv import load_dotenv
 
 from llama_index.core import StorageContext, VectorStoreIndex
-from llama_index.core.embeddings import BaseEmbedding
 from llama_index.core.llms.llm import LLM
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core.schema import Document
-from llama_index.embeddings.openai import OpenAIEmbedding
-from llama_index.llms.openai import OpenAI
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.core.vector_stores.types import MetadataFilter, MetadataFilters
+
+from .llm_provider import create_embedding_model, create_llm
+from .models import CandidateProfile
+from .profile_store import save_profiles
 
 try:
     from llama_index.core.readers import SimpleDirectoryReader
@@ -29,21 +27,7 @@ except ImportError:  # pragma: no cover - compatibility with older packages
     except ImportError:
         from llama_index.core import SimpleDirectoryReader  # type: ignore
 
-load_dotenv()
-
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small")
-OPENAI_LLM_MODEL = os.getenv("OPENAI_LLM_MODEL", "gpt-4o-mini")
-
 CHROMA_COLLECTION = "candidates"
-
-
-def create_embedding_model() -> BaseEmbedding:
-    return OpenAIEmbedding(model=OPENAI_EMBED_MODEL, api_key=OPENAI_API_KEY)
-
-
-def create_llm() -> LLM:
-    return OpenAI(model=OPENAI_LLM_MODEL, api_key=OPENAI_API_KEY, temperature=0.0)
 
 
 def extract_candidate_details(
@@ -105,20 +89,6 @@ def _normalize_optional_text(raw: object) -> Optional[str]:
         return None
     return value
 
-
-@dataclass
-class CandidateProfile:
-    id: str
-    name: str
-    profession: str
-    years_experience: Optional[str]
-    summary: str
-    skills: List[str]
-    source_file: str
-
-    def to_json(self) -> Dict[str, object]:
-        payload = asdict(self)
-        return payload
 
 class CandidateIndexer:
     def __init__(
@@ -211,58 +181,12 @@ class CandidateIndexer:
             pass
 
     def _persist_profiles(self, profiles: List[CandidateProfile]) -> None:
-        payload = [profile.to_json() for profile in profiles]
-        output_path = self._storage_dir / "candidates.json"
-        with output_path.open("w", encoding="utf-8") as fp:
-            json.dump(payload, fp, indent=2)
+        save_profiles(self._storage_dir, profiles)
 
 
 def slugify(value: str) -> str:
     tokens = re.findall(r"[a-zA-Z0-9]+", value.lower())
     return "-".join(tokens) or "candidate"
-
-
-def index_exists(storage_dir: Path) -> bool:
-    profiles_path = storage_dir / "candidates.json"
-    chroma_dir = storage_dir / "chroma"
-
-    if not profiles_path.exists():
-        return False
-    if not chroma_dir.exists():
-        return False
-
-    try:
-        has_chroma_data = any(chroma_dir.iterdir())
-    except OSError:
-        return False
-
-    if has_chroma_data:
-        return True
-
-    # Empty profile list is a valid indexed state when there are no resumes yet.
-    return len(load_profiles(storage_dir)) == 0
-
-
-def load_profiles(storage_dir: Path) -> List[CandidateProfile]:
-    data_path = storage_dir / "candidates.json"
-    if not data_path.exists():
-        return []
-    with data_path.open("r", encoding="utf-8") as fp:
-        raw = json.load(fp)
-    profiles: List[CandidateProfile] = []
-    for item in raw:
-        profiles.append(
-            CandidateProfile(
-                id=item["id"],
-                name=item["name"],
-                profession=item.get("profession", "Unknown"),
-                years_experience=item.get("years_experience"),
-                summary=item.get("summary", ""),
-                skills=item.get("skills", []),
-                source_file=item.get("source_file", ""),
-            )
-        )
-    return profiles
 
 
 if __name__ == "__main__":  # pragma: no cover - convenience script

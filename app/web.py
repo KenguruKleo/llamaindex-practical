@@ -210,15 +210,17 @@ def main() -> None:
     if selected_profile:
         st.sidebar.success(f"Viewing: {_display_name(selected_profile.name)}")
 
-    tab_agent, tab_directory = st.tabs(["Agent Chat", "Candidate Directory"])
-
-    with tab_agent:
-        render_agent_chat()
-
-    with tab_directory:
-        if selected_profile:
+    if selected_profile:
+        tab_directory, tab_agent = st.tabs(["Candidate Directory", "Agent Chat"])
+        with tab_directory:
             render_candidate_details(selected_profile)
-        else:
+        with tab_agent:
+            render_agent_chat()
+    else:
+        tab_agent, tab_directory = st.tabs(["Agent Chat", "Candidate Directory"])
+        with tab_agent:
+            render_agent_chat()
+        with tab_directory:
             render_directory(PROFILES, current_id)
 
 
